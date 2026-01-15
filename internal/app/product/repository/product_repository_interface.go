@@ -8,7 +8,7 @@ import (
 )
 
 type ProductRepository interface {
-	Create(ctx context.Context, p domain.Product) (domain.Product, error)
+	Create(ctx context.Context, p *domain.Product) (domain.Product, error)
 	GetById(ctx context.Context, id uuid.UUID) (domain.Product, error)
 	GetAll(ctx context.Context) ([]domain.Product, error)
 	Update(ctx context.Context, id uuid.UUID, p domain.Product) (domain.Product, error)

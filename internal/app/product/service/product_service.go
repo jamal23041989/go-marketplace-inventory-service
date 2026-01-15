@@ -32,7 +32,7 @@ func (p *productService) Create(ctx context.Context, product domain.Product) (do
 	product.CreatedAt = time.Now()
 	product.UpdatedAt = time.Now()
 
-	return p.repo.Create(ctx, product)
+	return p.repo.Create(ctx, &product)
 }
 
 func (p *productService) GetById(ctx context.Context, id uuid.UUID) (domain.Product, error) {

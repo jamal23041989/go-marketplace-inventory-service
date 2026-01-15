@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,26 +13,39 @@ import (
 	rp "github.com/jamal23041989/go-marketplace-inventory-service/internal/app/product/repository"
 	"github.com/jamal23041989/go-marketplace-inventory-service/internal/app/product/service"
 	"github.com/jamal23041989/go-marketplace-inventory-service/internal/core/config"
+	"github.com/jamal23041989/go-marketplace-inventory-service/internal/core/logger"
+	"github.com/jamal23041989/go-marketplace-inventory-service/internal/core/middleware"
 	"github.com/jamal23041989/go-marketplace-inventory-service/internal/core/repository"
 )
 
 func main() {
+	// initial logger
+	lg := logger.New(os.Stdout)
+
 	// Initial Config
 	cfg := config.MustLoadConfig()
 
 	//  Initial Database
 	db, err := repository.InitDB(cfg.DB)
 	if err != nil {
-		log.Fatal(err)
+		lg.Fatal("failed to connect to database: %v", err)
 	}
 
 	// Initial repository, service, handler
-	repo := rp.NewInMemoryProductRepository()
+	repo := rp.NewPostgresProductRepository(db)
 	svc := service.NewProductService(repo)
-	hdl := handler.NewProductHandler(svc)
+	hdl := handler.NewProductHandler(svc, lg)
+
+	// init middlerware
+	mw := middleware.New(lg)
 
 	// router
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	})
 
 	mux.HandleFunc("/products", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -42,6 +54,7 @@ func main() {
 		case http.MethodGet:
 			hdl.GetAll(w, r)
 		default:
+			lg.Warn("invalid method: %s", r.Method)
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
@@ -55,6 +68,7 @@ func main() {
 		case http.MethodGet:
 			hdl.GetById(w, r)
 		default:
+			lg.Warn("invalid method: %s", r.Method)
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
@@ -62,11 +76,14 @@ func main() {
 	// Server
 	server := &http.Server{
 		Addr: ":8080",
+		Handler: mw.Recovery(
+			mw.Logging(mux),
+		),
 	}
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
-			log.Println(err)
+			lg.Error("failed to start server: %v", err)
 		}
 	}()
 
@@ -80,13 +97,14 @@ func main() {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatal(err)
+		lg.Fatal("failed to shutdown server: %v", err)
 	}
 
 	func(db *sql.DB) {
 		if err := db.Close(); err != nil {
-			log.Fatal(err)
+			lg.Fatal("failed to close database: %v", err)
 		}
 	}(db)
-	log.Println("Server exiting")
+
+	lg.Info("Server exiting")
 }
